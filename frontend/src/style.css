@@ -1,7 +1,0 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
-
-.cell {
-	@apply w-20 h-20 bg-gray-200 flex items-center justify-center text-2xl cursor-pointer;
-}
