@@ -2,11 +2,34 @@ CREATE TABLE users (
     id SERIAL PRIMARY KEY,
     nickname VARCHAR(50) UNIQUE NOT NULL
 );
+
 CREATE TABLE games (
     id SERIAL PRIMARY KEY,
     player1_id INT REFERENCES users(id),
     player2_id INT REFERENCES users(id),
-    status VARCHAR(20),
-    board TEXT,
-    winner_id INT REFERENCES users(id)
+    status VARCHAR(20) NOT NULL,
+    turn VARCHAR(1) NOT NULL,
+    board JSONB NOT NULL,
+    winner_id INT REFERENCES users(id),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE moves (
+    id SERIAL PRIMARY KEY,
+    game_id INT REFERENCES games(id),
+    player_id INT REFERENCES users(id),
+    x INT NOT NULL,
+    y INT NOT NULL,
+    symbol VARCHAR(1) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE offline_stats (
+    id SERIAL PRIMARY KEY,
+    player_id INT REFERENCES users(id),
+    wins INT DEFAULT 0,
+    losses INT DEFAULT 0,
+    draws INT DEFAULT 0,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );

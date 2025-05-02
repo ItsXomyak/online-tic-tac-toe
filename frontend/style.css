@@ -1,0 +1,109 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+	background: linear-gradient(135deg, #e0e7ff 0%, #f3e8ff 100%);
+}
+
+.cell {
+	width: 110px;
+	height: 110px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	font-size: 3.5rem;
+	font-weight: bold;
+	background: rgba(255, 255, 255, 0.85);
+	border-radius: 1.2rem;
+	box-shadow: 0 4px 24px 0 rgba(80, 80, 160, 0.1);
+	cursor: pointer;
+	user-select: none;
+	position: relative;
+	transition: background 0.2s, box-shadow 0.2s, transform 0.15s;
+}
+
+.cell:hover:not(.disabled) {
+	background: #ede9fe;
+	transform: scale(1.07);
+	box-shadow: 0 8px 32px 0 rgba(80, 80, 160, 0.18);
+}
+
+.cell.disabled {
+	@apply bg-gray-200 cursor-not-allowed opacity-60;
+}
+
+.cell.x {
+	color: #2563eb;
+	text-shadow: 0 2px 8px #a5b4fc44;
+}
+
+.cell.o {
+	color: #ec4899;
+	text-shadow: 0 2px 8px #fbcfe844;
+}
+
+.cell.animate-pop {
+	animation: pop 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@keyframes pop {
+	0% {
+		transform: scale(0.5);
+		opacity: 0.2;
+	}
+	80% {
+		transform: scale(1.18);
+		opacity: 1;
+	}
+	100% {
+		transform: scale(1);
+		opacity: 1;
+	}
+}
+
+.hidden {
+	display: none;
+}
+
+#board {
+	min-width: 350px;
+	min-height: 350px;
+	background: linear-gradient(135deg, #f3f4f6 0%, #e5e7eb 100%);
+	box-shadow: 0 8px 32px 0 rgba(80, 80, 160, 0.1);
+	border-radius: 2rem;
+	transition: box-shadow 0.3s;
+	padding: 2rem 1.5rem;
+}
+
+#status {
+	min-height: 40px;
+	font-size: 1.4rem;
+	transition: color 0.3s, background 0.3s;
+}
+
+#offline-stats {
+	margin-top: 1rem;
+}
+
+/* Анимация для поиска противника */
+@keyframes pulse {
+	0% {
+		opacity: 1;
+	}
+	50% {
+		opacity: 0.5;
+	}
+	100% {
+		opacity: 1;
+	}
+}
+
+.searching {
+	animation: pulse 1.5s infinite;
+}
+
+#play-again,
+#back-to-menu {
+	outline: none;
+}

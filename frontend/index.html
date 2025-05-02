@@ -3,51 +3,96 @@
 	<head>
 		<meta charset="UTF-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-		<title>Tic-Tac-Toe</title>
+		<title>Tic Tac Toe</title>
 		<script src="https://cdn.tailwindcss.com"></script>
-		<style>
-			#game-board.hidden {
-				display: none;
-			}
-			.cell {
-				width: 60px;
-				height: 60px;
-				background-color: #e5e7eb; /* gray-200 */
-				display: flex;
-				align-items: center;
-				justify-content: center;
-				font-size: 24px;
-				cursor: pointer;
-				border: 1px solid #d1d5db; /* gray-300 */
-			}
-			.cell:hover {
-				background-color: #d1d5db; /* gray-300 */
-			}
-		</style>
+		<link rel="stylesheet" href="style.css" />
 	</head>
-	<body>
-		<div id="app" class="container mx-auto p-4">
-			<h1 class="text-3xl font-bold text-center">Tic-Tac-Toe</h1>
-			<div id="stats" class="my-4 text-center">Online: 0 | Games: 0</div>
-			<div class="flex justify-center gap-4">
+	<body
+		class="bg-gray-100 min-h-screen flex flex-col items-center justify-center font-sans"
+	>
+		<div
+			class="w-full max-w-md mx-auto mt-8 p-6 bg-white rounded-xl shadow-lg flex flex-col items-center"
+		>
+			<div
+				class="flex justify-between w-full mb-4 text-lg font-semibold text-gray-700"
+			>
+				<div>Online: <span id="online-count">0</span></div>
+				<div>Active Games: <span id="active-games">0</span></div>
+				<div>Total Games: <span id="total-games">0</span></div>
+			</div>
+			<div id="mode-selection" class="flex flex-col gap-4 w-full mb-4">
 				<button
-					id="quick-game"
-					class="bg-blue-500 text-white px-4 py-2 rounded"
+					id="online-btn"
+					class="py-2 px-4 bg-blue-500 hover:bg-blue-600 text-white rounded-lg shadow transition-all duration-200"
 				>
 					Quick Game
 				</button>
 				<button
-					id="offline-game"
-					class="bg-green-500 text-white px-4 py-2 rounded"
+					id="offline-btn"
+					class="py-2 px-4 bg-gray-400 hover:bg-gray-500 text-white rounded-lg shadow transition-all duration-200"
 				>
 					Offline Game
 				</button>
 			</div>
-			<div
-				id="game-board"
-				class="grid grid-cols-3 gap-2 w-64 mx-auto mt-4 hidden"
-			></div>
+			<div id="game-container" class="w-full flex flex-col items-center hidden">
+				<div
+					id="status"
+					class="mb-2 text-center text-lg font-bold text-blue-700 transition-all duration-300"
+				></div>
+				<div
+					id="board"
+					class="grid grid-cols-3 gap-2 bg-gray-200 p-4 rounded-lg shadow-lg mb-4 transition-all duration-300"
+				></div>
+				<div class="flex gap-2 mt-2">
+					<button
+						id="play-again"
+						class="hidden py-2 px-4 bg-green-500 hover:bg-green-600 text-white rounded-lg shadow transition-all duration-200"
+					>
+						Play Again
+					</button>
+					<button
+						id="back-to-menu"
+						class="hidden py-2 px-4 bg-red-500 hover:bg-red-600 text-white rounded-lg shadow transition-all duration-200"
+					>
+						Back to Menu
+					</button>
+				</div>
+			</div>
+			<div class="w-full mt-4 flex justify-between text-gray-600 text-sm">
+				<div>Wins: <span id="wins">0</span></div>
+				<div>Losses: <span id="losses">0</span></div>
+				<div>Draws: <span id="draws">0</span></div>
+			</div>
 		</div>
-		<script type="module" src="src/main.js"></script>
+		<div
+			id="role-selection-modal"
+			class="hidden fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50"
+		>
+			<div
+				class="bg-white p-6 rounded-xl shadow-lg flex flex-col items-center gap-4"
+			>
+				<div class="text-lg font-bold mb-2">Выберите роль</div>
+				<div class="flex gap-4">
+					<button
+						id="choose-x"
+						class="py-2 px-4 bg-blue-500 hover:bg-blue-600 text-white rounded-lg shadow transition-all duration-200"
+					>
+						X
+					</button>
+					<button
+						id="choose-o"
+						class="py-2 px-4 bg-gray-500 hover:bg-gray-600 text-white rounded-lg shadow transition-all duration-200"
+					>
+						O
+					</button>
+				</div>
+				<div class="text-xs text-gray-500 mt-2">
+					Если не выберете за 10 секунд — роль назначится случайно
+				</div>
+			</div>
+		</div>
+		<script src="script.js"></script>
+		<!-- PurgeCSS: text-blue-600 text-pink-500 -->
+		<div class="hidden text-blue-600 text-pink-500"></div>
 	</body>
 </html>
