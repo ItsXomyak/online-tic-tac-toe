@@ -11,6 +11,9 @@ let isOffline = false
 let isMyTurn = false
 let roleSelected = false
 let roleSelectionTimeout = null
+let opponentID = null
+let rematchRequested = false
+let rematchAccepted = false
 
 const modeSelection = document.getElementById('mode-selection')
 const gameContainer = document.getElementById('game-container')
@@ -24,13 +27,18 @@ const drawsElement = document.getElementById('draws')
 const onlineCount = document.getElementById('online-count')
 const activeGames = document.getElementById('active-games')
 const totalGames = document.getElementById('total-games')
+const rematchModal = document.getElementById('rematch-modal')
+const acceptRematchBtn = document.getElementById('accept-rematch')
+const declineRematchBtn = document.getElementById('decline-rematch')
 
 document.getElementById('online-btn').addEventListener('click', startOnlineGame)
 document
 	.getElementById('offline-btn')
 	.addEventListener('click', startOfflineGame)
-playAgainBtn.addEventListener('click', resetGame)
+playAgainBtn.addEventListener('click', requestRematch)
 backToMenuBtn.addEventListener('click', showMainMenu)
+acceptRematchBtn.addEventListener('click', acceptRematch)
+declineRematchBtn.addEventListener('click', declineRematch)
 
 async function startOnlineGame() {
 	try {
@@ -48,6 +56,7 @@ async function startOnlineGame() {
 		const data = await response.json()
 		playerID = data.playerID
 		gameID = data.opponentID || null
+		opponentID = data.opponentID || null
 
 		status.textContent =
 			data.status === 'waiting' ? 'Waiting for opponent...' : 'Game started!'
@@ -97,16 +106,24 @@ async function startOfflineGame() {
 	} catch (error) {
 		console.error('Error starting offline game:', error)
 		status.textContent = 'Failed to start game. Please try again.'
+		backToMenuBtn.classList.remove('hidden')
 	}
 }
 
 function initGame() {
-	board = Array(9).fill('')
+	board = [
+		['', '', ''],
+		['', '', ''],
+		['', '', ''],
+	]
 	currentTurn = 'X'
 	gameStatus = 'active'
-	boardElement.innerHTML = ''
+	isMyTurn = mySymbol === currentTurn
 	status.classList.remove('searching')
+	rematchRequested = false
+	rematchAccepted = false
 
+	boardElement.innerHTML = ''
 	for (let i = 0; i < 9; i++) {
 		const cell = document.createElement('div')
 		cell.className = 'cell'
@@ -117,6 +134,8 @@ function initGame() {
 
 	updateBoard()
 	playAgainBtn.classList.add('hidden')
+	backToMenuBtn.classList.add('hidden')
+	rematchModal.classList.add('hidden')
 	updateGameStatus()
 }
 
@@ -128,7 +147,6 @@ function initWebSocket() {
 	ws = new WebSocket(`${wsUrl}?playerID=${playerID}`)
 
 	ws.onopen = () => {
-		console.log('WebSocket connected')
 		if (gameID) {
 			ws.send(
 				JSON.stringify({
@@ -143,7 +161,6 @@ function initWebSocket() {
 	ws.onmessage = event => {
 		try {
 			const msg = JSON.parse(event.data)
-			console.log('WebSocket message received:', msg)
 			handleWebSocketMessage(msg)
 		} catch (error) {
 			console.error('Error parsing WebSocket message:', error)
@@ -152,84 +169,91 @@ function initWebSocket() {
 	}
 
 	ws.onclose = () => {
-		console.log('WebSocket disconnected')
-		status.textContent = 'Disconnected from server. Please refresh the page.'
-		disableBoard()
-		backToMenuBtn.classList.remove('hidden')
+		if (gameStatus !== 'finished') {
+			status.textContent = 'Connection lost. Please try again.'
+			backToMenuBtn.classList.remove('hidden')
+		}
+		ws = null
 	}
 
 	ws.onerror = error => {
 		console.error('WebSocket error:', error)
 		status.textContent = 'Connection error. Please try again.'
+		backToMenuBtn.classList.remove('hidden')
 	}
 }
 
 function handleWebSocketMessage(msg) {
-	if (msg.error) {
+	if (msg.type === 'error') {
 		console.error('Server error:', msg.message)
 		status.textContent = `Error: ${msg.message}`
 		return
 	}
 
-	console.log('Processing message:', msg.type)
 	switch (msg.type) {
 		case 'game_start':
 			gameID = msg.gameID
-			board = flattenBoard(
-				msg.board || [
-					['', '', ''],
-					['', '', ''],
-					['', '', ''],
-				]
-			)
-			if (msg.role) {
-				mySymbol = msg.role
-			} else {
-				status.textContent = 'Ошибка: не получена роль игрока от сервера'
-				console.error('Не получена роль игрока от сервера!')
-				disableBoard()
-				return
-			}
+			board = msg.board
+			mySymbol = msg.role || mySymbol
 			currentTurn = 'X'
+			opponentID = msg.player1 === playerID ? msg.player2 : msg.player1
 			isMyTurn = mySymbol === currentTurn
 			gameStatus = 'active'
-			console.log('Game started:', { gameID, mySymbol, isMyTurn })
 			initGame()
 			break
 
 		case 'move':
-			board = flattenBoard(msg.board)
+			board = msg.board
 			currentTurn = msg.turn
 			gameStatus = msg.status
 			isMyTurn = mySymbol === currentTurn
-			console.log('Move processed:', { currentTurn, gameStatus, isMyTurn })
 			updateBoard()
-
+			updateGameStatus()
 			if (gameStatus === 'finished') {
-				const result = getGameResult()
-				status.textContent = result
-				console.log('Game finished:', result)
-				disableBoard()
-				playAgainBtn.classList.remove('hidden')
-				updateStats()
-			} else {
-				updateGameStatus()
+				handleGameEnd()
+			}
+			break
+
+		case 'ai_move':
+			board = msg.board
+			currentTurn = msg.turn
+			gameStatus = msg.status
+			isMyTurn = mySymbol === currentTurn
+			updateBoard()
+			updateGameStatus()
+			if (gameStatus === 'finished') {
+				handleGameEnd()
 			}
 			break
 
 		case 'opponent_left':
-			console.log('Opponent disconnected')
 			status.textContent = 'Opponent disconnected'
 			gameStatus = 'finished'
-			disableBoard()
-			playAgainBtn.classList.remove('hidden')
+			handleGameEnd()
 			break
 
 		case 'invalid_move':
-			console.log('Invalid move:', msg.message)
 			status.textContent = 'Invalid move. Please try again.'
 			isMyTurn = true
 			updateBoard()
+			break
+
+		case 'rematch_request':
+			if (rematchRequested) return
+			rematchModal.classList.remove('hidden')
+			break
+
+		case 'rematch_response':
+			if (msg.accepted) {
+				rematchAccepted = true
+				startRematch()
+			} else {
+				status.textContent = 'match cancelled'
+				playAgainBtn.classList.add('hidden')
+				backToMenuBtn.classList.remove('hidden')
+				rematchRequested = false
+				rematchAccepted = false
+			}
 			break
 
 		default:
@@ -237,26 +261,144 @@ function handleWebSocketMessage(msg) {
 	}
 }
 
-function makeMove(index) {
-	if (!isMyTurn || gameStatus !== 'active' || board[index] !== '') {
-		console.log('Invalid move attempt:', {
-			isMyTurn,
-			gameStatus,
-			cell: board[index],
-		})
+function handleGameEnd() {
+	disableBoard()
+	const result = getGameResult()
+	status.textContent = result
+	if (!isOffline) {
+		playAgainBtn.textContent = 'Request Rematch'
+		playAgainBtn.classList.remove('hidden')
+	} else {
+		playAgainBtn.textContent = 'Play Again'
+		playAgainBtn.classList.remove('hidden')
+	}
+	backToMenuBtn.classList.remove('hidden')
+	updateStats()
+}
+
+function requestRematch() {
+	if (isOffline) {
+		resetGame()
 		return
 	}
 
-	try {
-		board[index] = mySymbol
-		updateBoard()
-		isMyTurn = false
+	if (rematchRequested) return
 
-		// Преобразуем индекс в координаты x и y
+	rematchRequested = true
+	status.textContent = 'Waiting for opponent to accept rematch...'
+	playAgainBtn.classList.add('hidden')
+	backToMenuBtn.classList.remove('hidden')
+
+	ws.send(
+		JSON.stringify({
+			type: 'rematch_request',
+			gameID: gameID,
+			playerID: playerID,
+		})
+	)
+}
+
+function acceptRematch() {
+	rematchModal.classList.add('hidden')
+	rematchAccepted = true
+
+	ws.send(
+		JSON.stringify({
+			type: 'rematch_response',
+			gameID: gameID,
+			playerID: playerID,
+			accepted: true,
+		})
+	)
+
+	status.textContent = 'Starting rematch...'
+}
+
+function declineRematch() {
+	rematchModal.classList.add('hidden')
+	ws.send(
+		JSON.stringify({
+			type: 'rematch_response',
+			gameID: gameID,
+			playerID: playerID,
+			accepted: false,
+		})
+	)
+	status.textContent = 'You declined the rematch'
+	playAgainBtn.classList.add('hidden')
+	backToMenuBtn.classList.remove('hidden')
+}
+
+function startRematch() {
+	if (!rematchAccepted) return
+
+	ws.send(
+		JSON.stringify({
+			type: 'start_rematch',
+			gameID: gameID,
+			playerID: playerID,
+			opponentID: opponentID,
+		})
+	)
+
+	rematchRequested = false
+	rematchAccepted = false
+}
+
+function getGameResult() {
+	for (let i = 0; i < 3; i++) {
+		if (
+			board[i][0] &&
+			board[i][0] === board[i][1] &&
+			board[i][1] === board[i][2]
+		) {
+			return board[i][0] === mySymbol ? 'You win!' : 'Opponent wins!'
+		}
+		if (
+			board[0][i] &&
+			board[0][i] === board[1][i] &&
+			board[1][i] === board[2][i]
+		) {
+			return board[0][i] === mySymbol ? 'You win!' : 'Opponent wins!'
+		}
+	}
+	if (
+		board[0][0] &&
+		board[0][0] === board[1][1] &&
+		board[1][1] === board[2][2]
+	) {
+		return board[0][0] === mySymbol ? 'You win!' : 'Opponent wins!'
+	}
+	if (
+		board[0][2] &&
+		board[0][2] === board[1][1] &&
+		board[1][1] === board[2][0]
+	) {
+		return board[0][2] === mySymbol ? 'You win!' : 'Opponent wins!'
+	}
+	for (let i = 0; i < 3; i++) {
+		for (let j = 0; j < 3; j++) {
+			if (board[i][j] === '') return ''
+		}
+	}
+	return 'Draw!'
+}
+
+function makeMove(index) {
+	if (!isMyTurn || gameStatus !== 'active') return
+
+	try {
 		const x = Math.floor(index / 3)
 		const y = index % 3
 
-		console.log('Sending move:', { gameID, playerID, x, y })
+		if (board[x][y] !== '') return
+
+		if (!ws || ws.readyState !== WebSocket.OPEN) {
+			console.warn('WebSocket connection lost, reconnecting...')
+			initWebSocket()
+			return
+		}
+
 		ws.send(
 			JSON.stringify({
 				type: 'move',
@@ -267,40 +409,41 @@ function makeMove(index) {
 			})
 		)
 
-		updateGameStatus()
+		if (isOffline && ws && ws.readyState === WebSocket.OPEN) {
+			ws.send(
+				JSON.stringify({
+					type: 'ai_move',
+					gameID: gameID,
+				})
+			)
+		}
 	} catch (error) {
 		console.error('Error making move:', error)
-		status.textContent = 'Error making move. Please try again.'
-		isMyTurn = true // Возвращаем ход игроку в случае ошибки
-		updateBoard()
+		status.textContent = 'Connection lost. Please try again.'
+		backToMenuBtn.classList.remove('hidden')
 	}
 }
 
 function updateBoard() {
 	const cells = boardElement.getElementsByClassName('cell')
 	for (let i = 0; i < cells.length; i++) {
-		const prev = cells[i].textContent
-		cells[i].textContent = board[i] || ''
-		cells[i].classList.remove('x', 'o', 'disabled', 'animate-pop')
+		const cell = cells[i]
+		const row = Math.floor(i / 3)
+		const col = i % 3
 
-		if (board[i] === 'X') {
-			cells[i].classList.add('x')
-		} else if (board[i] === 'O') {
-			cells[i].classList.add('o')
+		cell.classList.remove('x', 'o', 'disabled')
+		cell.textContent = ''
+
+		if (board[row][col] === 'X') {
+			cell.classList.add('x')
+			cell.textContent = 'X'
+		} else if (board[row][col] === 'O') {
+			cell.classList.add('o')
+			cell.textContent = 'O'
 		}
-		// Анимация появления символа
-		if (prev !== board[i] && board[i] !== '') {
-			cells[i].classList.add('animate-pop')
-		}
 
-		const shouldDisable =
-			board[i] !== '' ||
-			gameStatus !== 'active' ||
-			!isMyTurn ||
-			(isOffline && board[i] === 'O')
-
-		if (shouldDisable) {
-			cells[i].classList.add('disabled')
+		if (board[row][col] !== '' || !isMyTurn || gameStatus !== 'active') {
+			cell.classList.add('disabled')
 		}
 	}
 }
@@ -309,16 +452,13 @@ function updateGameStatus() {
 	if (gameStatus === 'finished') {
 		const result = getGameResult()
 		status.textContent = result
-		console.log('Game finished:', result)
 	} else if (isMyTurn) {
 		status.textContent = `Your turn (${mySymbol})`
-		console.log('Current turn: player', mySymbol)
 	} else {
 		const opponentSymbol = mySymbol === 'X' ? 'O' : 'X'
 		status.textContent = isOffline
 			? "AI's turn (O)"
 			: `Opponent's turn (${opponentSymbol})`
-		console.log('Current turn: opponent', opponentSymbol)
 	}
 }
 
@@ -329,50 +469,37 @@ function disableBoard() {
 	}
 }
 
-function getGameResult() {
-	const winPatterns = [
-		[0, 1, 2],
-		[3, 4, 5],
-		[6, 7, 8], // rows
-		[0, 3, 6],
-		[1, 4, 7],
-		[2, 5, 8], // columns
-		[0, 4, 8],
-		[2, 4, 6], // diagonals
-	]
-
-	for (const pattern of winPatterns) {
-		const [a, b, c] = pattern
-		if (board[a] && board[a] === board[b] && board[a] === board[c]) {
-			return board[a] === mySymbol ? 'You win!' : 'Opponent wins!'
-		}
-	}
-
-	return board.every(cell => cell !== '') ? 'Draw!' : ''
-}
-
 function startStatsPolling() {
 	const pollStats = async () => {
 		try {
 			const response = await fetch(`${backendUrl}/stats`)
-			if (!response.ok) {
-				throw new Error('Failed to fetch stats')
+			if (!response.ok) throw new Error('Failed to fetch stats')
+
+			const text = await response.text()
+			const jsonStrings = text.split('\n').filter(str => str.trim())
+			const lastJson = jsonStrings[jsonStrings.length - 1]
+
+			let stats
+			try {
+				stats = JSON.parse(lastJson)
+			} catch (e) {
+				console.error('Failed to parse stats:', lastJson)
+				return
 			}
-			const contentType = response.headers.get('content-type') || ''
-			if (!contentType.includes('application/json')) {
-				throw new Error('Response is not JSON')
+
+			if (stats && typeof stats === 'object') {
+				if (onlineCount) onlineCount.textContent = stats.online || '0'
+				if (activeGames) activeGames.textContent = stats.games || '0'
+				if (totalGames) totalGames.textContent = stats.totalGames || '0'
 			}
-			const stats = await response.json()
-			onlineCount.textContent = stats.online
-			activeGames.textContent = stats.games
-			if (totalGames) totalGames.textContent = stats.totalGames
 		} catch (error) {
 			console.error('Error fetching stats:', error)
 		}
 	}
 
 	pollStats()
-	setInterval(pollStats, 10000)
+	const intervalId = setInterval(pollStats, 10000)
+	window.addEventListener('beforeunload', () => clearInterval(intervalId))
 }
 
 async function updateStats() {
@@ -382,51 +509,78 @@ async function updateStats() {
 		const response = await fetch(
 			`${backendUrl}/offline-stats?playerID=${playerID}`
 		)
-		if (!response.ok) {
-			throw new Error('Failed to fetch stats')
-		}
+		if (!response.ok) throw new Error('Failed to fetch stats')
+
 		const stats = await response.json()
-		winsElement.textContent = stats.wins
-		lossesElement.textContent = stats.losses
-		drawsElement.textContent = stats.draws
+		if (stats && typeof stats === 'object') {
+			if (winsElement) winsElement.textContent = stats.wins || '0'
+			if (lossesElement) lossesElement.textContent = stats.losses || '0'
+			if (drawsElement) drawsElement.textContent = stats.draws || '0'
+		}
 	} catch (error) {
 		console.error('Error updating stats:', error)
 	}
 }
 
-function resetGame() {
-	console.log('Resetting game')
-	// Сброс всех переменных состояния
-	playerID = null
-	gameID = null
-	currentTurn = 'X'
-	mySymbol = 'X'
-	board = Array(9).fill('')
-	gameStatus = 'waiting'
-	isOffline = false
-	isMyTurn = false
-	roleSelected = false
-	if (ws) {
-		ws.close()
-		ws = null
-	}
-	if (isOffline) {
-		startOfflineGame()
-	} else {
-		startOnlineGame()
+async function resetGame() {
+	try {
+		playAgainBtn.classList.add('hidden')
+		backToMenuBtn.classList.add('hidden')
+		status.textContent = 'Starting new game...'
+
+		board = [
+			['', '', ''],
+			['', '', ''],
+			['', '', ''],
+		]
+		boardElement.innerHTML = ''
+		for (let i = 0; i < 9; i++) {
+			const cell = document.createElement('div')
+			cell.className = 'cell'
+			cell.dataset.index = i
+			cell.addEventListener('click', () => makeMove(i))
+			boardElement.appendChild(cell)
+		}
+		updateBoard()
+
+		if (ws) {
+			ws.close()
+			ws = null
+		}
+
+		gameStatus = 'active'
+		currentTurn = 'X'
+		isMyTurn = true
+
+		if (isOffline) {
+			await startOfflineGame()
+		} else {
+			await startOnlineGame()
+		}
+	} catch (error) {
+		console.error('Error resetting game:', error)
+		status.textContent = 'Error starting new game. Please try again.'
+		backToMenuBtn.classList.remove('hidden')
 	}
 }
 
 function showMainMenu() {
-	console.log('Returning to main menu')
 	gameContainer.classList.add('hidden')
 	modeSelection.classList.remove('hidden')
 	status.textContent = ''
 	status.classList.remove('searching')
+	playAgainBtn.classList.add('hidden')
+	backToMenuBtn.classList.add('hidden')
+	rematchModal.classList.add('hidden')
 	if (ws) {
 		ws.close()
 		ws = null
 	}
+	playerID = null
+	gameID = null
+	opponentID = null
+	rematchRequested = false
+	rematchAccepted = false
 }
 
 function showRoleSelection() {
@@ -434,7 +588,6 @@ function showRoleSelection() {
 	modal.classList.remove('hidden')
 	modal.classList.add('flex')
 
-	// Устанавливаем таймер на 10 секунд для автоматического выбора
 	roleSelectionTimeout = setTimeout(() => {
 		if (!roleSelected) {
 			const randomRole = Math.random() < 0.5 ? 'X' : 'O'
@@ -468,15 +621,13 @@ function selectRole(role) {
 	)
 }
 
-// Добавляем обработчики для кнопок выбора роли
 document
 	.getElementById('choose-x')
-	.addEventListener('click', () => selectRole('X'))
+	?.addEventListener('click', () => selectRole('X'))
 document
 	.getElementById('choose-o')
-	.addEventListener('click', () => selectRole('O'))
+	?.addEventListener('click', () => selectRole('O'))
 
-// Преобразование двумерного массива board в одномерный
 function flattenBoard(board2d) {
 	return board2d.flat()
 }

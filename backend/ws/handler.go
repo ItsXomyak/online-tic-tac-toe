@@ -100,7 +100,6 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 
-			// Сохранение хода AI
 			_, err := db.DB.Exec(
 				"INSERT INTO moves (game_id, player_id, x, y, symbol) VALUES ($1, $2, $3, $4, $5)",
 				int(gameID), nil, x, y, "O",
@@ -112,9 +111,11 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 			winner := game.Board.CheckWinner()
 			if winner != "" {
 				game.Status = "finished"
+				if winner == "X" {
+					game.WinnerID = game.Player1ID
+				}
 				updateOfflineStats(playerID, winner, game)
 			} else {
-				// Проверка на ничью
 				isDraw := true
 				for i := 0; i < 3; i++ {
 					for j := 0; j < 3; j++ {
@@ -133,14 +134,21 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 
-			// Обновление игры в БД
 			boardJSON, _ := json.Marshal(game.Board)
-			_, err = db.DB.Exec(
-				"UPDATE games SET status=$1, turn=$2, board=$3, winner_id=$4, updated_at=$5 WHERE id=$6",
-				game.Status, game.Turn, boardJSON, game.WinnerID, time.Now(), int(gameID),
-			)
-			if err != nil {
-				log.Printf("Failed to update game %d: %v", gameID, err)
+			var updateErr error
+			if game.WinnerID != 0 {
+				_, updateErr = db.DB.Exec(
+					"UPDATE games SET status=$1, turn=$2, board=$3, winner_id=$4, updated_at=$5 WHERE id=$6",
+					game.Status, game.Turn, boardJSON, game.WinnerID, time.Now(), int(gameID),
+				)
+			} else {
+				_, updateErr = db.DB.Exec(
+					"UPDATE games SET status=$1, turn=$2, board=$3, updated_at=$4 WHERE id=$5",
+					game.Status, game.Turn, boardJSON, time.Now(), int(gameID),
+				)
+			}
+			if updateErr != nil {
+				log.Printf("Failed to update game %d: %v", gameID, updateErr)
 			}
 
 			state := map[string]interface{}{
@@ -154,6 +162,38 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 			if err := conn.WriteJSON(state); err != nil {
 				log.Println("Failed to send AI move:", err)
 			}
+
+		case "rematch_request":
+			gameID, ok := msg["gameID"].(float64)
+			if !ok {
+				sendError(conn, "Invalid game ID")
+				continue
+			}
+			gm.HandleRematchRequest(int(gameID), playerID)
+
+		case "rematch_response":
+			gameID, ok1 := msg["gameID"].(float64)
+			accepted, ok2 := msg["accepted"].(bool)
+			if !ok1 || !ok2 {
+				sendError(conn, "Invalid game ID or response")
+				continue
+			}
+			gm.HandleRematchResponse(int(gameID), playerID, accepted)
+
+		case "start_rematch":
+			opponentIDFloat, ok := msg["opponentID"].(float64)
+			if !ok {
+				sendError(conn, "Invalid opponent ID")
+				continue
+			}
+			opponentID := int(opponentIDFloat)
+			newGameID := gm.CreateRematch(playerID, opponentID)
+			game, ok := gm.GetGame(newGameID)
+			if !ok {
+				sendError(conn, "Failed to create rematch game")
+				continue
+			}
+			gm.NotifyPlayers(game)
 
 		default:
 			sendError(conn, "Unknown message type")
@@ -175,7 +215,6 @@ func updateOfflineStats(playerID int, winner string, game *game.Game) {
 	_, err := db.DB.Exec(query, playerID, time.Now())
 	if err != nil {
 		log.Printf("Failed to update offline stats for player %d: %v", playerID, err)
-		// Создаем запись, если не существует
 		_, err = db.DB.Exec(
 			"INSERT INTO offline_stats (player_id, wins, losses, draws) VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING",
 			playerID, 0, 0, 0,
@@ -183,7 +222,6 @@ func updateOfflineStats(playerID int, winner string, game *game.Game) {
 		if err != nil {
 			log.Printf("Failed to create offline stats for player %d: %v", playerID, err)
 		}
-		// Повторяем обновление
 		_, err = db.DB.Exec(query, playerID, time.Now())
 		if err != nil {
 			log.Printf("Failed to update offline stats after creation for player %d: %v", playerID, err)
@@ -192,7 +230,7 @@ func updateOfflineStats(playerID int, winner string, game *game.Game) {
 }
 
 func sendError(conn *websocket.Conn, message string) {
-	if err := conn.WriteJSON(map[string]string{"type": "error", "message": message}); err != nil {
+	if err := conn.WriteJSON(map[string]string{"type": "warning", "message": message}); err != nil {
 		log.Println("Failed to send error message:", err)
 	}
-}   
+}

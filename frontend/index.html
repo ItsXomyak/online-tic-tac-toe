@@ -91,6 +91,32 @@
 				</div>
 			</div>
 		</div>
+		<div
+			id="rematch-modal"
+			class="hidden fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50"
+		>
+			<div
+				class="bg-white p-6 rounded-xl shadow-lg flex flex-col items-center gap-4"
+			>
+				<div class="text-lg font-bold mb-2">
+					Opponent requested a rematch. Accept?
+				</div>
+				<div class="flex gap-4">
+					<button
+						id="accept-rematch"
+						class="py-2 px-4 bg-green-500 hover:bg-green-600 text-white rounded-lg shadow transition-all duration-200"
+					>
+						Accept
+					</button>
+					<button
+						id="decline-rematch"
+						class="py-2 px-4 bg-red-500 hover:bg-red-600 text-white rounded-lg shadow transition-all duration-200"
+					>
+						Decline
+					</button>
+				</div>
+			</div>
+		</div>
 		<script src="script.js"></script>
 		<!-- PurgeCSS: text-blue-600 text-pink-500 -->
 		<div class="hidden text-blue-600 text-pink-500"></div>
