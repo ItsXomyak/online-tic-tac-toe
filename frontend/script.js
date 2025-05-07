@@ -99,7 +99,6 @@ async function startOfflineGame() {
 		isMyTurn = true
 
 		initGame()
-		initWebSocket()
 		modeSelection.classList.add('hidden')
 		gameContainer.classList.remove('hidden')
 		startStatsPolling()
@@ -147,7 +146,7 @@ function initWebSocket() {
 	ws = new WebSocket(`${wsUrl}?playerID=${playerID}`)
 
 	ws.onopen = () => {
-		if (gameID) {
+		if (gameID && ws && ws.readyState === WebSocket.OPEN) {
 			ws.send(
 				JSON.stringify({
 					type: 'register',
@@ -191,6 +190,13 @@ function handleWebSocketMessage(msg) {
 	}
 
 	switch (msg.type) {
+		case 'connected':
+			return
+
+		case 'warning':
+			console.warn('Server warning:', msg.message)
+			return
+
 		case 'game_start':
 			gameID = msg.gameID
 			board = msg.board
@@ -330,6 +336,22 @@ function declineRematch() {
 }
 
 function startRematch() {
+	if (isOffline) {
+		board = [
+			['', '', ''],
+			['', '', ''],
+			['', '', ''],
+		]
+		currentTurn = 'X'
+		gameStatus = 'active'
+		isMyTurn = true
+		updateBoard()
+		playAgainBtn.classList.add('hidden')
+		backToMenuBtn.classList.add('hidden')
+		status.textContent = `Your turn (${mySymbol})`
+		return
+	}
+
 	if (!rematchAccepted) return
 
 	ws.send(
@@ -387,12 +409,22 @@ function getGameResult() {
 function makeMove(index) {
 	if (!isMyTurn || gameStatus !== 'active') return
 
-	try {
-		const x = Math.floor(index / 3)
-		const y = index % 3
+	const x = Math.floor(index / 3)
+	const y = index % 3
 
-		if (board[x][y] !== '') return
+	if (board[x][y] !== '') return
 
+	if (isOffline) {
+		board[x][y] = mySymbol
+		currentTurn = 'O'
+		isMyTurn = false
+		updateBoard()
+		checkGameEnd()
+
+		if (gameStatus === 'active') {
+			setTimeout(makeAIMove, 500) // Добавляем небольшую задержку для лучшего UX
+		}
+	} else {
 		if (!ws || ws.readyState !== WebSocket.OPEN) {
 			console.warn('WebSocket connection lost, reconnecting...')
 			initWebSocket()
@@ -408,19 +440,6 @@ function makeMove(index) {
 				y: y,
 			})
 		)
-
-		if (isOffline && ws && ws.readyState === WebSocket.OPEN) {
-			ws.send(
-				JSON.stringify({
-					type: 'ai_move',
-					gameID: gameID,
-				})
-			)
-		}
-	} catch (error) {
-		console.error('Error making move:', error)
-		status.textContent = 'Connection lost. Please try again.'
-		backToMenuBtn.classList.remove('hidden')
 	}
 }
 
@@ -552,6 +571,8 @@ async function resetGame() {
 		currentTurn = 'X'
 		isMyTurn = true
 
+		await new Promise(resolve => setTimeout(resolve, 100))
+
 		if (isOffline) {
 			await startOfflineGame()
 		} else {
@@ -630,4 +651,157 @@ document
 
 function flattenBoard(board2d) {
 	return board2d.flat()
+}
+
+// Добавляем функции для ИИ
+function makeAIMove() {
+	if (gameStatus !== 'active' || isMyTurn) return
+
+	// 1. Проверяем, может ли ИИ выиграть следующим ходом
+	for (let i = 0; i < 3; i++) {
+		for (let j = 0; j < 3; j++) {
+			if (board[i][j] === '') {
+				board[i][j] = 'O'
+				if (checkWinner(board) === 'O') {
+					currentTurn = 'X'
+					isMyTurn = true
+					updateBoard()
+					checkGameEnd()
+					return
+				}
+				board[i][j] = ''
+			}
+		}
+	}
+
+	// 2. Проверяем, может ли игрок выиграть следующим ходом, и блокируем его
+	for (let i = 0; i < 3; i++) {
+		for (let j = 0; j < 3; j++) {
+			if (board[i][j] === '') {
+				board[i][j] = 'X'
+				if (checkWinner(board) === 'X') {
+					board[i][j] = 'O' // Блокируем выигрышный ход
+					currentTurn = 'X'
+					isMyTurn = true
+					updateBoard()
+					checkGameEnd()
+					return
+				}
+				board[i][j] = ''
+			}
+		}
+	}
+
+	// 3. Если центр свободен, занимаем его
+	if (board[1][1] === '') {
+		board[1][1] = 'O'
+		currentTurn = 'X'
+		isMyTurn = true
+		updateBoard()
+		checkGameEnd()
+		return
+	}
+
+	// 4. Если углы свободны, занимаем случайный угол
+	const corners = [
+		[0, 0],
+		[0, 2],
+		[2, 0],
+		[2, 2],
+	]
+	const availableCorners = corners.filter(([i, j]) => board[i][j] === '')
+	if (availableCorners.length > 0) {
+		const [i, j] =
+			availableCorners[Math.floor(Math.random() * availableCorners.length)]
+		board[i][j] = 'O'
+		currentTurn = 'X'
+		isMyTurn = true
+		updateBoard()
+		checkGameEnd()
+		return
+	}
+
+	// 5. Занимаем любую свободную клетку
+	for (let i = 0; i < 3; i++) {
+		for (let j = 0; j < 3; j++) {
+			if (board[i][j] === '') {
+				board[i][j] = 'O'
+				currentTurn = 'X'
+				isMyTurn = true
+				updateBoard()
+				checkGameEnd()
+				return
+			}
+		}
+	}
+}
+
+function checkWinner(board) {
+	// Проверка строк
+	for (let i = 0; i < 3; i++) {
+		if (
+			board[i][0] !== '' &&
+			board[i][0] === board[i][1] &&
+			board[i][1] === board[i][2]
+		) {
+			return board[i][0]
+		}
+	}
+
+	// Проверка столбцов
+	for (let i = 0; i < 3; i++) {
+		if (
+			board[0][i] !== '' &&
+			board[0][i] === board[1][i] &&
+			board[1][i] === board[2][i]
+		) {
+			return board[0][i]
+		}
+	}
+
+	// Проверка диагоналей
+	if (
+		board[0][0] !== '' &&
+		board[0][0] === board[1][1] &&
+		board[1][1] === board[2][2]
+	) {
+		return board[0][0]
+	}
+	if (
+		board[0][2] !== '' &&
+		board[0][2] === board[1][1] &&
+		board[1][1] === board[2][0]
+	) {
+		return board[0][2]
+	}
+
+	return ''
+}
+
+function isDraw(board) {
+	for (let i = 0; i < 3; i++) {
+		for (let j = 0; j < 3; j++) {
+			if (board[i][j] === '') {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+function checkGameEnd() {
+	const winner = checkWinner(board)
+	if (winner) {
+		gameStatus = 'finished'
+		status.textContent = winner === mySymbol ? 'You win!' : 'AI wins!'
+		handleGameEnd()
+		return
+	}
+
+	if (isDraw(board)) {
+		gameStatus = 'finished'
+		status.textContent = 'Draw!'
+		handleGameEnd()
+		return
+	}
 }
