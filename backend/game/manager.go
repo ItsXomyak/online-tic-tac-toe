@@ -167,6 +167,16 @@ func (gm *GameManager) CreateRematch(player1ID, player2ID int) int {
     return gameID
 }
 
+func (gm *GameManager) GetPlayerNickname(playerID int) string {
+    var nickname string
+    err := db.DB.QueryRow("SELECT nickname FROM users WHERE id = $1", playerID).Scan(&nickname)
+    if err != nil {
+        log.Printf("Failed to get nickname for player %d: %v", playerID, err)
+        return "Unknown"
+    }
+    return nickname
+}
+
 func (gm *GameManager) NotifyPlayers(game *Game) {
     gm.mu.Lock()
     defer gm.mu.Unlock()
@@ -174,13 +184,15 @@ func (gm *GameManager) NotifyPlayers(game *Game) {
     log.Printf("Notifying players %d and %d for game %d", game.Player1ID, game.Player2ID, game.ID)
     if client1, ok := gm.clients[game.Player1ID]; ok {
         state1 := map[string]interface{}{
-            "type":    "game_start",
-            "gameID":  game.ID,
-            "board":   game.Board,
-            "turn":    game.Turn,
-            "player1": game.Player1ID,
-            "player2": game.Player2ID,
-            "role":    "X",
+            "type":      "game_start",
+            "gameID":    game.ID,
+            "board":     game.Board,
+            "turn":      game.Turn,
+            "player1":   game.Player1ID,
+            "player2":   game.Player2ID,
+            "role":      "X",
+            "nickname":  gm.GetPlayerNickname(game.Player1ID),
+            "opponentNickname": gm.GetPlayerNickname(game.Player2ID),
         }
         err := client1.Conn.WriteJSON(state1)
         if err != nil {
@@ -195,13 +207,15 @@ func (gm *GameManager) NotifyPlayers(game *Game) {
     if game.Player2ID != 0 {
         if client2, ok := gm.clients[game.Player2ID]; ok {
             state2 := map[string]interface{}{
-                "type":    "game_start",
-                "gameID":  game.ID,
-                "board":   game.Board,
-                "turn":    game.Turn,
-                "player1": game.Player1ID,
-                "player2": game.Player2ID,
-                "role":    "O",
+                "type":      "game_start",
+                "gameID":    game.ID,
+                "board":     game.Board,
+                "turn":      game.Turn,
+                "player1":   game.Player1ID,
+                "player2":   game.Player2ID,
+                "role":      "O",
+                "nickname":  gm.GetPlayerNickname(game.Player2ID),
+                "opponentNickname": gm.GetPlayerNickname(game.Player1ID),
             }
             err := client2.Conn.WriteJSON(state2)
             if err != nil {

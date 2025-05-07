@@ -138,7 +138,11 @@ func handleQuickGame(w http.ResponseWriter, r *http.Request) {
 	}
 
 	opponentID := gm.FindOpponent(playerID)
-	response := map[string]interface{}{"status": "waiting", "playerID": playerID}
+	response := map[string]interface{}{
+		"status":   "waiting",
+		"playerID": playerID,
+		"nickname": nickname,
+	}
 	if opponentID != 0 {
 		response["status"] = "started"
 		response["opponentID"] = opponentID
@@ -164,6 +168,7 @@ func handleOfflineGame(w http.ResponseWriter, r *http.Request) {
 		"status":   "started",
 		"playerID": playerID,
 		"gameID":   gameID,
+		"nickname": nickname,
 	}); err != nil {
 		log.Println("Failed to encode response:", err)
 	}

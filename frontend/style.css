@@ -107,3 +107,31 @@ body {
 #back-to-menu {
 	outline: none;
 }
+
+.player-nickname {
+	position: fixed;
+	top: 20px;
+	right: 20px;
+	padding: 8px 16px;
+	background-color: #4a5568;
+	color: white;
+	border-radius: 8px;
+	font-size: 14px;
+	font-weight: 500;
+	box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+	display: none;
+}
+
+.opponent-nickname {
+	position: fixed;
+	top: 20px;
+	left: 20px;
+	padding: 8px 16px;
+	background-color: #4a5568;
+	color: white;
+	border-radius: 8px;
+	font-size: 14px;
+	font-weight: 500;
+	box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+	display: none;
+}

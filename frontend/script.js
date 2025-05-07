@@ -14,6 +14,7 @@ let roleSelectionTimeout = null
 let opponentID = null
 let rematchRequested = false
 let rematchAccepted = false
+let playerNickname = localStorage.getItem('playerNickname') || ''
 
 const modeSelection = document.getElementById('mode-selection')
 const gameContainer = document.getElementById('game-container')
@@ -50,13 +51,19 @@ async function startOnlineGame() {
 		})
 
 		if (!response.ok) {
-			throw new Error('Failed to start quick game')
+			status.textContent = 'Не удалось начать игру. Попробуйте еще раз.'
+			return
 		}
 
 		const data = await response.json()
+		if (data.status === 'error') {
+			status.textContent = data.message
+			return
+		}
 		playerID = data.playerID
 		gameID = data.opponentID || null
 		opponentID = data.opponentID || null
+		isOffline = false
 
 		status.textContent =
 			data.status === 'waiting' ? 'Waiting for opponent...' : 'Game started!'
@@ -68,13 +75,16 @@ async function startOnlineGame() {
 			initGame()
 		}
 
+		if (data.nickname) {
+			updatePlayerNickname(data.nickname)
+		}
+
 		initWebSocket()
 		modeSelection.classList.add('hidden')
 		gameContainer.classList.remove('hidden')
 		startStatsPolling()
 	} catch (error) {
-		console.error('Error starting online game:', error)
-		status.textContent = 'Failed to start game. Please try again.'
+		status.textContent = 'Не удалось начать игру. Попробуйте еще раз.'
 	}
 }
 
@@ -88,23 +98,33 @@ async function startOfflineGame() {
 		})
 
 		if (!response.ok) {
-			throw new Error('Failed to start offline game')
+			status.textContent = 'Не удалось начать игру. Попробуйте еще раз.'
+			backToMenuBtn.classList.remove('hidden')
+			return
 		}
 
 		const data = await response.json()
+		if (data.status === 'error') {
+			status.textContent = data.message
+			backToMenuBtn.classList.remove('hidden')
+			return
+		}
 		playerID = data.playerID
 		gameID = data.gameID
 		isOffline = true
 		mySymbol = 'X'
 		isMyTurn = true
 
+		if (data.nickname) {
+			updatePlayerNickname(data.nickname)
+		}
+
 		initGame()
 		modeSelection.classList.add('hidden')
 		gameContainer.classList.remove('hidden')
 		startStatsPolling()
 	} catch (error) {
-		console.error('Error starting offline game:', error)
-		status.textContent = 'Failed to start game. Please try again.'
+		status.textContent = 'Не удалось начать игру. Попробуйте еще раз.'
 		backToMenuBtn.classList.remove('hidden')
 	}
 }
@@ -162,30 +182,27 @@ function initWebSocket() {
 			const msg = JSON.parse(event.data)
 			handleWebSocketMessage(msg)
 		} catch (error) {
-			console.error('Error parsing WebSocket message:', error)
-			status.textContent = 'Error processing game update'
+			status.textContent = 'Ошибка обработки обновления игры'
 		}
 	}
 
 	ws.onclose = () => {
 		if (gameStatus !== 'finished') {
-			status.textContent = 'Connection lost. Please try again.'
+			status.textContent = 'Соединение потеряно. Попробуйте еще раз.'
 			backToMenuBtn.classList.remove('hidden')
 		}
 		ws = null
 	}
 
-	ws.onerror = error => {
-		console.error('WebSocket error:', error)
-		status.textContent = 'Connection error. Please try again.'
+	ws.onerror = () => {
+		status.textContent = 'Ошибка соединения. Попробуйте еще раз.'
 		backToMenuBtn.classList.remove('hidden')
 	}
 }
 
 function handleWebSocketMessage(msg) {
 	if (msg.type === 'error') {
-		console.error('Server error:', msg.message)
-		status.textContent = `Error: ${msg.message}`
+		status.textContent = `Ошибка: ${msg.message}`
 		return
 	}
 
@@ -194,7 +211,6 @@ function handleWebSocketMessage(msg) {
 			return
 
 		case 'warning':
-			console.warn('Server warning:', msg.message)
 			return
 
 		case 'game_start':
@@ -206,6 +222,16 @@ function handleWebSocketMessage(msg) {
 			isMyTurn = mySymbol === currentTurn
 			gameStatus = 'active'
 			initGame()
+			if (msg.nickname) {
+				updatePlayerNickname(msg.nickname)
+			}
+			if (msg.opponentNickname) {
+				const opponentNicknameElement =
+					document.getElementById('opponent-nickname')
+				if (opponentNicknameElement) {
+					opponentNicknameElement.textContent = msg.opponentNickname
+				}
+			}
 			break
 
 		case 'move':
@@ -233,13 +259,13 @@ function handleWebSocketMessage(msg) {
 			break
 
 		case 'opponent_left':
-			status.textContent = 'Opponent disconnected'
+			status.textContent = 'Соперник отключился'
 			gameStatus = 'finished'
 			handleGameEnd()
 			break
 
 		case 'invalid_move':
-			status.textContent = 'Invalid move. Please try again.'
+			status.textContent = 'Неверный ход. Попробуйте еще раз.'
 			isMyTurn = true
 			updateBoard()
 			break
@@ -254,7 +280,7 @@ function handleWebSocketMessage(msg) {
 				rematchAccepted = true
 				startRematch()
 			} else {
-				status.textContent = 'match cancelled'
+				status.textContent = 'Реванш отклонен'
 				playAgainBtn.classList.add('hidden')
 				backToMenuBtn.classList.remove('hidden')
 				rematchRequested = false
@@ -263,7 +289,7 @@ function handleWebSocketMessage(msg) {
 			break
 
 		default:
-			console.warn('Unknown message type:', msg.type)
+			return
 	}
 }
 
@@ -422,12 +448,12 @@ function makeMove(index) {
 		checkGameEnd()
 
 		if (gameStatus === 'active') {
-			setTimeout(makeAIMove, 500) // Добавляем небольшую задержку для лучшего UX
+			setTimeout(makeAIMove, 500)
 		}
 	} else {
 		if (!ws || ws.readyState !== WebSocket.OPEN) {
-			console.warn('WebSocket connection lost, reconnecting...')
-			initWebSocket()
+			status.textContent = 'Соединение потеряно. Попробуйте еще раз.'
+			backToMenuBtn.classList.remove('hidden')
 			return
 		}
 
@@ -492,7 +518,10 @@ function startStatsPolling() {
 	const pollStats = async () => {
 		try {
 			const response = await fetch(`${backendUrl}/stats`)
-			if (!response.ok) throw new Error('Failed to fetch stats')
+			if (!response.ok) {
+				console.warn('Не удалось получить статистику:', response.statusText)
+				return
+			}
 
 			const text = await response.text()
 			const jsonStrings = text.split('\n').filter(str => str.trim())
@@ -502,7 +531,7 @@ function startStatsPolling() {
 			try {
 				stats = JSON.parse(lastJson)
 			} catch (e) {
-				console.error('Failed to parse stats:', lastJson)
+				console.warn('Не удалось разобрать статистику:', lastJson)
 				return
 			}
 
@@ -512,7 +541,7 @@ function startStatsPolling() {
 				if (totalGames) totalGames.textContent = stats.totalGames || '0'
 			}
 		} catch (error) {
-			console.error('Error fetching stats:', error)
+			console.warn('Проблема с получением статистики:', error.message)
 		}
 	}
 
@@ -545,7 +574,7 @@ async function resetGame() {
 	try {
 		playAgainBtn.classList.add('hidden')
 		backToMenuBtn.classList.add('hidden')
-		status.textContent = 'Starting new game...'
+		status.textContent = 'Начало новой игры...'
 
 		board = [
 			['', '', ''],
@@ -579,8 +608,7 @@ async function resetGame() {
 			await startOnlineGame()
 		}
 	} catch (error) {
-		console.error('Error resetting game:', error)
-		status.textContent = 'Error starting new game. Please try again.'
+		status.textContent = 'Ошибка начала новой игры. Попробуйте еще раз.'
 		backToMenuBtn.classList.remove('hidden')
 	}
 }
@@ -593,6 +621,13 @@ function showMainMenu() {
 	playAgainBtn.classList.add('hidden')
 	backToMenuBtn.classList.add('hidden')
 	rematchModal.classList.add('hidden')
+
+	// Скрываем никнеймы при возврате в меню
+	const nicknameElement = document.getElementById('player-nickname')
+	const opponentNicknameElement = document.getElementById('opponent-nickname')
+	if (nicknameElement) nicknameElement.style.display = 'none'
+	if (opponentNicknameElement) opponentNicknameElement.style.display = 'none'
+
 	if (ws) {
 		ws.close()
 		ws = null
@@ -803,5 +838,20 @@ function checkGameEnd() {
 		status.textContent = 'Draw!'
 		handleGameEnd()
 		return
+	}
+}
+
+function updatePlayerNickname(nickname) {
+	playerNickname = nickname
+	localStorage.setItem('playerNickname', nickname)
+	const nicknameElement = document.getElementById('player-nickname')
+	const opponentNicknameElement = document.getElementById('opponent-nickname')
+
+	if (nicknameElement) {
+		nicknameElement.textContent = nickname
+		nicknameElement.style.display = isOffline ? 'none' : 'block'
+	}
+	if (opponentNicknameElement) {
+		opponentNicknameElement.style.display = isOffline ? 'none' : 'block'
 	}
 }
